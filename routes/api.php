@@ -28,7 +28,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Admin Panel
     Route::post('/users', [AdminPanelController::class, 'addUser']);
-    Route::post('/import-csv', [AdminPanelController::class, 'importCsv']);
+    Route::post('/import-csv/{selectedUserId}', [AdminPanelController::class, 'importCsv']);
     Route::get('/users', [AdminPanelController::class, 'getAllUsers']);
     Route::put('/users/{user}', [AdminPanelController::class, 'updateUser']);
     Route::delete('/users/{user}', [AdminPanelController::class, 'deleteUser']);

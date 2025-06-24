@@ -37,12 +37,12 @@ const handleChange = (e) => {
       [e.target.name]: e.target.value
     })
   }
-  const handleDemoLogin = () => {
-    setFormData({
-      email: 'projetsafrique@iworks.sn',
-      password: 'PAE%pae123*-+'
-    })
-  }
+  // const handleDemoLogin = () => {
+  //   setFormData({
+  //     email: 'projetsafrique@iworks.sn',
+  //     password: 'PAE%pae123*-+'
+  //   })
+  // }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-emerald-100 flex items-center justify-center p-4">
@@ -58,7 +58,7 @@ const handleChange = (e) => {
         </div>
 
         {/* Informations d'identification de test */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        {/* <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
           <div className="flex items-start gap-3">
             <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
@@ -67,16 +67,9 @@ const handleChange = (e) => {
                 Email : <code className="bg-blue-100 px-1 rounded text-xs">projetsafrique@iworks.sn</code><br />
                 Mot de passe : <code className="bg-blue-100 px-1 rounded text-xs">PAE%pae123*-+</code>
               </p>
-              <button
-                type="button"
-                onClick={handleDemoLogin}
-                className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
-              >
-                Remplir automatiquement
-              </button>
             </div>
           </div>
-        </div>
+        </div> */}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>

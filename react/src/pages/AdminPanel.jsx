@@ -264,7 +264,7 @@ const handleToggleStatus = async (user) => {
       csvContent += `# \n`
       
       // ✅ Ligne spéciale pour le total de poulets (pour faciliter l'import)
-      csvContent += `TOTAL_CHICKENS,${csvData.totalChickens}\n`
+      csvContent += `TOTAL_CHICKENS,${csvData.farmData.totalChickens}\n`
       csvContent += `# \n`
       
       // En-têtes et données des dépenses
@@ -332,42 +332,162 @@ const handleToggleStatus = async (user) => {
   }
 
   // Fonction pour uploader et traiter le CSV
-    const handleCsvImport = async () => {
-  if (!selectedFile || !selectedUserId) {
-    toast.error('Veuillez sélectionner un fichier et un utilisateur');
-    return;
+  const handleCsvImport = async () => {
+    if (!selectedFile) {
+      toast.error('Veuillez sélectionner un fichier CSV')
+      return
+    }
+
+    if (!selectedUserId) {
+      toast.error('Veuillez sélectionner un utilisateur')
+      return
+    }
+
+    // ✅ Afficher le nom de l'utilisateur dans la confirmation
+    const selectedUser = users.find(u => u.id == selectedUserId)
+    const userName = selectedUser ? selectedUser.name : 'cet utilisateur'
+    
+    if (!confirm(`⚠️ ATTENTION: Cette action va ÉCRASER toutes les données existantes de ${userName}. Continuer ?`)) {
+      return
+    }
+
+    setUploadingCsv(true)
+
+    try {
+      console.log('🔄 Début import CSV pour utilisateur:', selectedUserId, '(' + userName + ')')
+      const text = await selectedFile.text()
+      const lines = text.split('\n').filter(line => line.trim())
+      
+      console.log('📄 Lignes du fichier:', lines.length)
+      
+      const expenses = []
+      const revenues = []
+      const mortality = []
+      const monthlyFinancials = []
+      let totalChickens = 0 // ✅ Variable pour stocker le total de poulets
+      
+      let currentSection = 'DATA'
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim()
+        
+        // Ignorer les commentaires
+        if (line.startsWith('#')) continue
+        
+        // ✅ Détecter la ligne TOTAL_CHICKENS
+        if (line.startsWith('TOTAL_CHICKENS,')) {
+          const parts = line.split(',')
+          if (parts.length >= 2) {
+            totalChickens = parseInt(parts[1]) || 0
+            console.log('🐔 Total poulets trouvé dans CSV:', totalChickens)
+          }
+          continue
+        }
+        
+        if (line === 'MONTHLY_FINANCIALS') {
+          currentSection = 'MONTHLY'
+          i++ // Skip header line
+          continue
+        }
+        
+        if (line.startsWith('MONTH,')) continue // Skip header
+        if (line.startsWith('TYPE,')) continue // Skip header
+        
+        // Parser la ligne CSV en tenant compte des guillemets
+        const columns = []
+        let current = ''
+        let inQuotes = false
+        
+        for (let j = 0; j < line.length; j++) {
+          const char = line[j]
+          if (char === '"') {
+            inQuotes = !inQuotes
+          } else if (char === ',' && !inQuotes) {
+            columns.push(current.trim())
+            current = ''
+          } else {
+            current += char
+          }
+        }
+        columns.push(current.trim()) // Ajouter la dernière colonne
+        
+        if (currentSection === 'DATA' && columns.length >= 5) {
+          const [type, date, category, description, amount, extra] = columns
+          
+          if (type === 'EXPENSE') {
+            expenses.push({
+              date,
+              category,
+              description,
+              amount: parseFloat(amount) || 0,
+              frequency: extra || 'ponctuel'
+            })
+          } else if (type === 'REVENUE') {
+            const [quantity, unitPrice] = extra ? extra.split('x').map(v => parseFloat(v)) : [1, parseFloat(amount)]
+            revenues.push({
+              date,
+              type: category,
+              description,
+              quantity: quantity || 1,
+              unit_price: unitPrice || parseFloat(amount) || 0,
+              total_amount: parseFloat(amount) || 0
+            })
+          } else if (type === 'MORTALITY') {
+            mortality.push({
+              date,
+              cause: category,
+              description,
+              estimated_loss: parseFloat(amount) || 0,
+              count: parseInt(extra) || 1
+            })
+          }
+        } else if (currentSection === 'MONTHLY' && columns.length >= 4) {
+          const [month, revenues, expenses, netIncome, reinvestment] = columns
+          monthlyFinancials.push({
+            month,
+            totalRevenue: parseFloat(revenues) || 0,
+            totalExpenses: parseFloat(expenses) || 0,
+            netIncome: parseFloat(netIncome) || 0
+          })
+        }
+      }
+
+      console.log('📊 Données parsées pour', userName, ':', {
+        totalChickens, // ✅ Inclure le total de poulets
+        expenses: expenses.length,
+        revenues: revenues.length,
+        mortality: mortality.length,
+        monthlyFinancials: monthlyFinancials.length
+      })
+
+      // ✅ Envoyer les données à l'API pour mise à jour de l'utilisateur spécifique
+      await api.post(`/import-csv/${selectedUserId}`, {
+        totalChickens, // ✅ Inclure le total de poulets
+        expenses,
+        revenues,
+        mortality,
+        monthlyFinancials
+      })
+
+      toast.success(`✅ CSV importé avec succès pour ${userName} ! ${totalChickens} poulets, ${expenses.length} dépenses, ${revenues.length} revenus, ${mortality.length} événements de mortalité importés.`)
+      
+      // Reset file input et état
+      setSelectedFile(null)
+      const fileInput = document.querySelector('input[type="file"]')
+      if (fileInput) fileInput.value = ''
+      
+      // Recharger les informations de l'utilisateur
+      checkUserData()
+      
+      console.log('✅ Import terminé avec succès pour', userName)
+      
+    } catch (error) {
+      console.error('❌ Erreur import CSV:', error)
+      toast.error('Erreur lors de l\'import du CSV. Vérifiez le format du fichier.')
+    } finally {
+      setUploadingCsv(false)
+    }
   }
-
-  // Créez une copie stable du fichier pour l'upload
-  const fileToUpload = new File([selectedFile], selectedFile.name, {
-    type: selectedFile.type,
-    lastModified: selectedFile.lastModified
-  });
-
-  const formData = new FormData();
-  formData.append('csv_file', fileToUpload); // Utilisez la copie stable
-  formData.append('user_id', selectedUserId);
-
-  setUploadingCsv(true);
-
-  try {
-    const response = await api.post('/api/import-csv', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-
-    toast.success(response.data.message);
-    // Réinitialiser le sélecteur de fichier
-    setSelectedFile(null);
-    document.getElementById('csv-upload').value = ''; // Réinitialise l'input file
-  } catch (error) {
-    console.error('Erreur détaillée:', error);
-    toast.error(error.response?.data?.message || 'Échec de l\'importation');
-  } finally {
-    setUploadingCsv(false);
-  }
-};
 
   const getRoleLabel = (role) => {
     const roleObj = userRoles.find(r => r.value === role)

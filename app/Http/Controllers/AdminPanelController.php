@@ -130,124 +130,68 @@ class AdminPanelController extends Controller
             'message' => 'Utilisateur mis à jour avec succès'
         ]);
     }
-    public function importCsv(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'csv_file' => 'required|file|mimetypes:text/csv,text/plain|max:2048', // 2MB max
-            'user_id' => 'required|exists:users,id'
-        ], [
-            'csv_file.required' => 'Aucun fichier CSV sélectionné',
-            'csv_file.mimetypes' => 'Le fichier doit être de type CSV',
-            'user_id.exists' => 'L\'utilisateur spécifié n\'existe pas'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // Vérifier les permissions
-        // if (!$request->user()->isAdmin()) {
-        //     return response()->json(['message' => 'Action non autorisée'], 403);
-        // }
-
-        return DB::transaction(function () use ($request) {
-            $user = User::findOrFail($request->user_id);
-            $file = $request->file('csv_file');
-            $results = $this->processCsv($request,$file, $user);
-
-            return response()->json([
-                'message' => 'Importation réussie',
-                'stats' => $results
-            ]);
-        });
-    }
-
-   private function processCsv(Request $request, $file, $user)
+    public function importCsv(Request $request, int $userId)
 {
-    $path = $file->getRealPath();
-    $fileContent = file_get_contents($path);
-    $lines = explode("\n", $fileContent);
+    // Validation des données
+    $validator = Validator::make($request->all(), [
+        'totalChickens' => 'sometimes|integer|min:0',
+        'expenses' => 'sometimes|array',
+        'expenses.*.date' => 'required|date',
+        'expenses.*.amount' => 'required|numeric|min:0',
+        'revenues' => 'sometimes|array',
+        'revenues.*.date' => 'required|date',
+        'revenues.*.total_amount' => 'required|numeric|min:0',
+        'mortality' => 'sometimes|array',
+        'mortality.*.date' => 'required|date',
+        'monthlyFinancials' => 'sometimes|array'
+    ]);
 
-    $stats = [
-        'expenses' => 0,
-        'revenues' => 0,
-        'mortality' => 0,
-        'total_chickens' => 0
-    ];
-
-    // Réinitialiser les données existantes
-    $user->expenses()->delete();
-    $user->revenues()->delete();
-    $user->mortalityEvents()->delete();
-
-    foreach ($lines as $line) {
-        $line = trim($line);
-        if (empty($line)) continue;
-
-        // Détection du type de ligne
-        if (str_starts_with($line, 'TYPE,')) continue; // Skip header
-        if (str_starts_with($line, '#')) continue; // Commentaire
-
-        // Parser la ligne CSV
-        $columns = str_getcsv($line);
-        if (count($columns) < 5) continue;
-
-        $type = $columns[0];
-        $date = $columns[1];
-        $category = $columns[2];
-        $description = $columns[3];
-        $amount = $columns[4];
-        $extra = $columns[5] ?? null;
-
-        switch ($type) {
-            case 'EXPENSE':
-                $user->expenses()->create([
-                    'date' => $date,
-                    'category' => $category,
-                    'description' => $description,
-                    'amount' => (float)$amount,
-                    'frequency' => $extra ?? 'ponctuel',
-                    'is_recurring' => ($extra && $extra !== 'ponctuel')
-                ]);
-                $stats['expenses']++;
-                break;
-
-            case 'REVENUE':
-                $user->revenues()->create([
-                    'date' => $date,
-                    'type' => $category,
-                    'description' => $description,
-                    'quantity' => (int)($extra ? explode('x', $extra)[0] : 1),
-                    'unit_price' => (float)($extra ? explode('x', $extra)[1] : $amount),
-                    'total_amount' => (float)$amount
-                ]);
-                $stats['revenues']++;
-                break;
-
-            case 'MORTALITY':
-                $user->mortalityEvents()->create([
-                    'date' => $date,
-                    'cause' => $category,
-                    'description' => $description,
-                    'estimated_loss' => (float)$amount,
-                    'count' => (int)($extra ?? 1)
-                ]);
-                $stats['mortality']++;
-                break;
-
-            case 'TOTAL_CHICKENS':
-                $stats['total_chickens'] = (int)$amount;
-                $user->farmData()->updateOrCreate(
-                    ['user_id' => $user->id],
-                    ['total_chickens' => (int)$amount]
-                );
-                break;
-        }
+    if ($validator->fails()) {
+        return response()->json([
+            'message' => 'Validation failed',
+            'errors' => $validator->errors()
+        ], 422);
     }
 
-    return $stats;
+    return DB::transaction(function () use ($userId, $request) {
+        $user = User::findOrFail($userId);
+
+        // Suppression des anciennes données
+        $user->expenses()->delete();
+        $user->revenues()->delete();
+        $user->mortalityEvents()->delete();
+
+        // Insertion des nouvelles données
+        if (!empty($request->expenses)) {
+            $user->expenses()->createMany($request->expenses);
+        }
+
+        if (!empty($request->revenues)) {
+            $user->revenues()->createMany($request->revenues);
+        }
+
+        if (!empty($request->mortality)) {
+            $user->mortalityEvents()->createMany($request->mortality);
+        }
+
+        // Mise à jour du nombre total de poulets
+        if ($request->has('totalChickens')) {
+            $user->farmData()->updateOrCreate(
+                ['user_id' => $user->id],
+                ['total_chickens' => $request->totalChickens]
+            );
+        }
+
+        return response()->json([
+            'message' => 'Données importées avec succès',
+            'stats' => [
+                'total_chickens' => $request->totalChickens ?? 0,
+                'expenses' => count($request->expenses ?? []),
+                'revenues' => count($request->revenues ?? []),
+                'mortality' => count($request->mortality ?? []),
+                'monthly_financials' => count($request->monthlyFinancials ?? [])
+            ]
+        ]);
+    });
 }
 }

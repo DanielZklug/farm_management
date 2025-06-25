@@ -327,7 +327,7 @@ export default function Expenses() {
                   return (
                     <tr key={month.month} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4 font-medium text-gray-900 capitalize">
-                        {formatMonth(month.month)}
+                        {formatMonth(month.monthKey)}
                       </td>
                       <td className="py-3 px-4 text-right text-red-600 font-semibold">
                         {formatCurrency(month.total)}
